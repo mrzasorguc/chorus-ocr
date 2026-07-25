@@ -278,6 +278,14 @@ def _select(hyps, mode="auto"):
 # Aligning the hypotheses into columns and voting per column lifts that cap,
 # because the result need not exist in any single hypothesis.
 LATTICE_ENABLED = os.environ.get("CHORUS_LATTICE", "1") != "0"
+PRIOR_ENABLED = os.environ.get("CHORUS_PRIOR", "1") != "0"
+PRIOR_WEIGHT = float(os.environ.get("CHORUS_PRIOR_WEIGHT", "0.2"))
+_PRIOR_CACHE = {}
+
+try:  # optional: without it the lattice falls back to the plain column vote
+    from wordfreq import zipf_frequency as _zipf
+except ImportError:  # pragma: no cover - depends on the install profile
+    _zipf = None
 
 def _align_columns(pivot, texts):
     """Align every text to the pivot and return one option per text per column.
@@ -349,11 +357,91 @@ def _column_pick(col, hyps):
     forms = surfaces[key]
     return max(forms.items(), key=lambda kv: (kv[1], kv[0]))[0]
 
+def _column_options(col, hyps):
+    """Every option for one column with its ballot score, best first."""
+    by_engine = {}
+    surfaces = defaultdict(lambda: defaultdict(float))
+    for opt, h in zip(col, hyps):
+        eng = _engine(h.get("src", ""))
+        key = opt.lower()
+        slot = by_engine.setdefault(eng, {"opts": defaultdict(float), "ballot": 0.0})
+        slot["opts"][key] += h["weight"]
+        if h["weight"] > slot["ballot"]:
+            slot["ballot"] = h["weight"]
+        surfaces[key][opt] += h["weight"]
+
+    tally = defaultdict(float)
+    for slot in by_engine.values():
+        total = sum(slot["opts"].values()) or 1.0
+        for key, weight in slot["opts"].items():
+            tally[key] += slot["ballot"] * (weight / total)
+
+    out = []
+    for key, score in tally.items():
+        form = max(surfaces[key].items(), key=lambda kv: (kv[1], kv[0]))[0]
+        out.append((form, score))
+    out.sort(key=lambda kv: (-kv[1], len(kv[0]), kv[0]))
+    return out
+
+def _token_prior(token):
+    """How ordinary a token is as a word. None means the prior has no opinion."""
+    key = token.lower()
+    if key in _PRIOR_CACHE:
+        return _PRIOR_CACHE[key]
+    letters = [ch for ch in key if ch.isalpha()]
+    if not letters or len(letters) < len(key) / 2:
+        value = None  # numbers, punctuation, identifiers: stay out of it
+    else:
+        word = "".join(ch for ch in key if ch.isalpha() or ch in "'-")
+        value = max(_zipf(word, "en"), _zipf(word, "tr"))
+    _PRIOR_CACHE[key] = value
+    return value
+
+def _text_prior(text):
+    scores = [s for s in (_token_prior(t) for t in text.split()) if s is not None]
+    if not scores:
+        return 0.0
+    return sum(scores) / len(scores)
+
+def _beam(cols, hyps, width=12, branch=3):
+    """Whole-string candidates, so columns are not decided in isolation."""
+    beams = [("", 0.0)]
+    for col in cols:
+        options = _column_options(col, hyps)[:branch]
+        if not options:
+            continue
+        nxt = {}
+        for text, score in beams:
+            for form, opt_score in options:
+                cand = text + form
+                value = score + opt_score
+                if cand not in nxt or value > nxt[cand]:
+                    nxt[cand] = value
+        beams = sorted(nxt.items(), key=lambda kv: -kv[1])[:width]
+    return [(" ".join(t.split()), s) for t, s in beams]
+
 def _lattice(hyps):
     """Fuse document readings character by character through a column lattice."""
     pivot = max(hyps, key=lambda h: h["weight"])["text"]
     cols = _align_columns(pivot, [h["text"] for h in hyps])
     text = " ".join("".join(_column_pick(col, hyps) for col in cols).split())
+
+    # Deciding each column alone leaves most of the lattice unreachable: the
+    # right string is in the beam far more often than the column vote picks it.
+    # What separates a real reading from a plausible blend is not agreement
+    # between engines -- ranking by that made results worse, because agreement
+    # pulls the answer back to what the engines already said -- but whether the
+    # result is a word. The prior is a general frequency list, never anything
+    # derived from a benchmark, and one lambda serves every mode.
+    if PRIOR_ENABLED and _zipf is not None:
+        best, best_value = text, None
+        for cand, support in _beam(cols, hyps):
+            value = support + PRIOR_WEIGHT * _text_prior(cand)
+            if best_value is None or value > best_value:
+                best, best_value = cand, value
+        if best:
+            text = best
+
     if not text:
         return _rover(hyps)
     conf = min(0.99, max(h.get("conf", 0.9) for h in hyps))

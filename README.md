@@ -162,11 +162,11 @@ than any single engine available to that mode.
 
 | Dataset | Best single engine | Chorus Standard | Chorus Maximum | Chorus Max+Quality |
 | --- | ---: | ---: | ---: | ---: |
-| FUNSD | 0.71 (GOT-OCR) | 0.61 | 0.74 | **0.78** |
+| FUNSD | 0.71 (GOT-OCR) | 0.65 | 0.78 | **0.80** |
 | IIIT5K | 0.93 (GOT-OCR) | 0.92 | **0.98** | 0.96 |
 
 Character error rate is where fusion pulls furthest ahead. On FUNSD, Max+Quality
-sits at 0.0935 against 0.4459 for GOT-OCR alone, so even a reading that is not
+sits at 0.0904 against 0.4459 for GOT-OCR alone, so even a reading that is not
 exactly right is usually close.
 
 ![Character error rate](docs/images/benchmark_cer.png)
@@ -183,13 +183,18 @@ are only adopted when a paired bootstrap over that tuning split puts the whole
 crops. An earlier three-point "gain" was discarded under this rule once the
 interval showed it was noise.
 
-The current release fuses document readings character by character instead of
-picking one engine's whole answer, which is what cuts FUNSD character error
-from 0.3562 to 0.1777 in Maximum and from 0.1349 to 0.0935 in Max+Quality. That
-was the one change the bootstrap rule certified. The accuracy figures it did not
-certify moved both ways, and Standard Fusion lost three points on FUNSD, from
-0.64 to 0.61. That regression is reported rather than tuned away, and the
-reasoning behind refusing to patch it is in
+Document readings are fused character by character rather than by picking one
+engine's whole answer, so the result can be a reading no single engine produced.
+Candidates are then ranked by how ordinary their words are, using a general
+English and Turkish frequency list that never sees the benchmark. Together these
+cut FUNSD character error from 0.3562 to 0.1512 in Maximum and from 0.1349 to
+0.0904 in Max+Quality.
+
+An earlier build of the character fusion cost Standard Fusion three points of
+FUNSD accuracy, 0.64 to 0.61. That regression was published rather than tuned
+away, and the candidate ranking later recovered it to 0.65 without anything being
+fitted to the split it was measured on. The reasoning, including a repair that
+was refused because only test results supported it, is in
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md). Full method, per-engine tables, and the comparison
 with published cloud and VLM results are in
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).

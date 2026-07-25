@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "out")
-TAG = os.environ.get("CHORUS_BENCH_TAG", "v5")
+TAG = os.environ.get("CHORUS_BENCH_TAG", "v6")
 IMG_DIR = os.path.join(ROOT, "docs", "images")
 os.makedirs(IMG_DIR, exist_ok=True)
 
