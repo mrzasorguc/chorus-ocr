@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chorus-ocr"
+version = "0.1.0"
+description = "Multi-engine OCR with test-time augmentation and consensus fusion"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Chorus contributors" }]
+keywords = ["ocr", "computer-vision", "easyocr", "tesseract", "paddleocr"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Image Recognition",
+]
+dependencies = [
+  "numpy>=1.26,<3",
+  "opencv-python>=4.9,<5",
+  "Pillow>=10,<12",
+  "easyocr>=1.7,<2",
+  "paddleocr>=3.0,<4",
+  "paddlepaddle>=3.0,<4",
+  "pytesseract>=0.3.10,<1",
+]
+
+[project.optional-dependencies]
+demo = ["gradio>=5.0,<6"]
+got = [
+  "torch>=2.4,<3",
+  "torchvision>=0.19,<1",
+  "transformers>=4.45,<5",
+  "timm>=1.0,<2",
+]
+full = [
+  "gradio>=5.0,<6",
+  "torch>=2.4,<3",
+  "torchvision>=0.19,<1",
+  "transformers>=4.45,<5",
+  "timm>=1.0,<2",
+  "scipy>=1.12,<2",
+]
+
+[project.scripts]
+chorus = "chorus.cli:main"
+chorus-demo = "chorus.web:main"
+
+[tool.setuptools]
+packages = ["chorus"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

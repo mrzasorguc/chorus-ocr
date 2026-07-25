@@ -1,0 +1,2 @@
+# Optional development environment with every OCR adapter
+-e .[full]

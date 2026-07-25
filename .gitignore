@@ -1,0 +1,49 @@
+# Public repository exclusions
+bench/
+archive/
+tessdata/
+out/
+docs/CLEANUP_REPORT.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Model and package caches
+.cache/
+*.safetensors
+*.bin
+
+# Local archives and logs
+*.zip
+*.tar
+*.tar.gz
+*.log
+*.tmp
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
