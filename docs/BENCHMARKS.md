@@ -35,11 +35,32 @@ Every dataset is split into two disjoint parts by the `--skip` flag.
 | Split | Range | Used for |
 | --- | --- | --- |
 | Test | `skip=0, n=100` | The published numbers below. Never used for tuning. |
-| Tuning | `skip=1000, n=60` | Choosing fusion strategy and engine weights. |
+| Tuning | `skip=1000, n=300` | Choosing fusion strategy and engine weights. |
 
 Fusion strategies and per-engine weights were selected on the tuning split only,
-with a two-fold holdout check, and were then measured once on the untouched test
-split. No setting was ever chosen because it scored well on the test split.
+and were then measured once on the untouched test split. No setting was ever
+chosen because it scored well on the test split.
+
+### The decision rule, and why it got stricter
+
+The tuning split originally held 60 samples. A selector change that gained about
+three points there lost three points on the test split in one mode. Sixty
+samples cannot resolve a three-point difference -- three points is two samples --
+so that decision had been made on noise.
+
+The split was enlarged to 300 samples and adoption now requires a stated error
+bar. `scripts/decide_fusion.py` replays both the old and the new selector over
+the exact same cached hypotheses, so every comparison is paired, and runs a
+4,000-round paired bootstrap over the per-sample difference. A change is adopted
+only when the whole 95% interval sits on one side of zero, for accuracy and for
+character error rate separately.
+
+Under that rule the current selector is indistinguishable from the old one in
+11 of 12 comparisons and clearly better in one (FUNSD Maximum, CER +0.028 with
+an interval of [+0.004, +0.058]). It is kept because it never loses, not because
+it raises accuracy -- it does not, at any resolution this evidence can support.
+A separately tempting variant that scored best on the small split was rejected
+by the same rule.
 
 ## Charts
 
@@ -60,10 +81,10 @@ Generated from the JSON results with `python scripts/make_charts.py`.
 | EasyOCR alone | 0.33 | 0.4666 | 0.03 |
 | PaddleOCR alone | 0.41 | 0.4398 | 0.24 |
 | Tesseract alone | 0.56 | 0.2282 | 0.34 |
-| GOT-OCR 2.0 alone | 0.71 | 0.4459 | 2.37 |
-| **Chorus — Standard Fusion** | **0.61** | 0.2156 | 0.62 |
-| **Chorus — Maximum Performance** | **0.75** | 0.3954 | 3.02 |
-| **Chorus — Maximum + Quality** | **0.80** | **0.1496** | 7.77 |
+| GOT-OCR 2.0 alone | 0.71 | 0.4459 | 2.63 |
+| **Chorus — Standard Fusion** | **0.64** | 0.1937 | 0.50 |
+| **Chorus — Maximum Performance** | **0.75** | 0.3562 | 3.14 |
+| **Chorus — Maximum + Quality** | **0.77** | **0.1349** | 7.38 |
 
 ## Results — IIIT5K (scene text, 100 word crops)
 
@@ -72,17 +93,17 @@ Generated from the JSON results with `python scripts/make_charts.py`.
 | EasyOCR alone | 0.72 | 0.2082 | 0.03 |
 | PaddleOCR alone | 0.73 | 0.2477 | 0.21 |
 | Tesseract alone | 0.66 | 0.2505 | 0.32 |
-| GOT-OCR 2.0 alone | 0.93 | 0.0427 | 2.08 |
-| **Chorus — Standard Fusion** | **0.92** | 0.0759 | 0.67 |
-| **Chorus — Maximum Performance** | **0.97** | **0.0300** | 3.26 |
-| **Chorus — Maximum + Quality** | 0.95 | 0.0342 | 5.63 |
+| GOT-OCR 2.0 alone | 0.93 | 0.0427 | 1.92 |
+| **Chorus — Standard Fusion** | **0.92** | 0.0759 | 0.49 |
+| **Chorus — Maximum Performance** | **0.98** | **0.0200** | 2.11 |
+| **Chorus — Maximum + Quality** | 0.96 | 0.0283 | 4.94 |
 
 ## What these numbers do and do not show
 
 **They show** that fusion beats every engine it is built from. In each mode,
 Chorus scores higher than any single engine available to that mode: Standard
-reaches 0.61 and 0.92 where its best member reaches 0.56 and 0.73, and the
-GOT-enabled modes reach 0.80 and 0.97 where GOT alone reaches 0.71 and 0.93.
+reaches 0.64 and 0.92 where its best member reaches 0.56 and 0.73, and the
+GOT-enabled modes reach 0.77 and 0.98 where GOT alone reaches 0.71 and 0.93.
 
 **They do not show** that Chorus is the strongest OCR system in existence.
 Chorus is a fusion layer, so it cannot read anything its member engines all
@@ -94,7 +115,7 @@ present them as if they were.
 ### On Maximum + Quality scoring below Maximum on IIIT5K
 
 Exhaustive test-time augmentation helps on degraded document text, where it
-lifts FUNSD from 0.75 to 0.80 and cuts CER from 0.3954 to 0.1496. On clean scene
+lifts FUNSD from 0.75 to 0.77 and cuts CER from 0.3562 to 0.1349. On clean scene
 text it adds hypotheses that occasionally outvote a correct reading, which costs
 two points on IIIT5K. Use Maximum for scene photos and Maximum + Quality for
 scanned or degraded documents.

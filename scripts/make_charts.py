@@ -1,6 +1,7 @@
 """Render benchmark charts from the measured JSON results.
 
-Reads out/bench_v2_*.json and writes PNG charts into docs/images/.
+Reads out/bench_$CHORUS_BENCH_TAG_*.json (default v4) and writes PNG charts
+into docs/images/.
 Re-run this after a new benchmark run to refresh the images in the README.
 
     python scripts/make_charts.py
@@ -14,6 +15,7 @@ import matplotlib.pyplot as plt
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "out")
+TAG = os.environ.get("CHORUS_BENCH_TAG", "v4")
 IMG_DIR = os.path.join(ROOT, "docs", "images")
 os.makedirs(IMG_DIR, exist_ok=True)
 
@@ -45,9 +47,9 @@ def load(tag):
 
 def rows_for(dataset):
     """Return [(label, word_acc, cer, sec, is_ours), ...] for one dataset."""
-    standard = load(f"v2_standard_{dataset}")
-    maximum = load(f"v2_max_{dataset}")
-    quality = load(f"v2_maxq_{dataset}")
+    standard = load(f"{TAG}_standard_{dataset}")
+    maximum = load(f"{TAG}_max_{dataset}")
+    quality = load(f"{TAG}_maxq_{dataset}")
     singles = [
         ("EasyOCR", "easyocr"),
         ("PaddleOCR", "paddle"),

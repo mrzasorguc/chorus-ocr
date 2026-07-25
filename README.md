@@ -162,8 +162,8 @@ than any single engine available to that mode.
 
 | Dataset | Best single engine | Chorus Standard | Chorus Maximum | Chorus Max+Quality |
 | --- | ---: | ---: | ---: | ---: |
-| FUNSD | 0.71 (GOT-OCR) | 0.61 | 0.75 | **0.80** |
-| IIIT5K | 0.93 (GOT-OCR) | 0.92 | **0.97** | 0.95 |
+| FUNSD | 0.71 (GOT-OCR) | 0.64 | 0.75 | **0.77** |
+| IIIT5K | 0.93 (GOT-OCR) | 0.92 | **0.98** | 0.96 |
 
 ![Character error rate](docs/images/benchmark_cer.png)
 
@@ -172,9 +172,13 @@ while the GOT-enabled modes trade several seconds for the top scores.
 
 ![Accuracy against speed](docs/images/benchmark_tradeoff.png)
 
-Tuning used a separate split that shares no samples with the numbers above, so
-nothing here was optimized against its own benchmark. Full method, per-engine
-tables, and the comparison with published cloud and VLM results are in
+Tuning used a separate 300-sample split that shares no samples with the numbers
+above, so nothing here was optimized against its own benchmark. Fusion changes
+are only adopted when a paired bootstrap over that tuning split puts the whole
+95% interval on one side of zero; both selectors are judged on the exact same
+crops. An earlier three-point "gain" was discarded under this rule once the
+interval showed it was noise. Full method, per-engine tables, and the comparison
+with published cloud and VLM results are in
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 These are experimental observations rather than production guarantees. Hardware,

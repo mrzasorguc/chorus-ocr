@@ -184,6 +184,91 @@ def _mbr(hyps):
     conf = sum(c for _, c in words) / len(words) if words else float(best.get("conf", 0.0))
     return {"text": best["text"], "confidence": round(conf, 4), "words": words, "mode": "mbr"}
 
+# Set to "legacy" to restore the older per-hypothesis MBR selection.
+FUSION_LEGACY = os.environ.get("CHORUS_FUSION", "engine_vote") == "legacy"
+
+def _engine_vote_scores(hyps):
+    """Give every engine one vote, split across the variants it produced.
+
+    Test-time augmentation means an engine can return many readings of the
+    same crop. Those readings are not independent opinions, they are one
+    engine looking at lightly modified copies of one image. Summing them per
+    hypothesis lets an engine buy influence simply by running more variants:
+    in the quality profile EasyOCR and PaddleOCR field seven variants each
+    while GOT-OCR fields two, so the weakest engines cast the most votes.
+
+    Here each engine's ballot sums to the strength of its own best reading,
+    and is divided among its readings in proportion to their weight. Engines
+    still differ in influence, but only through reliability and confidence,
+    never through variant count. Agreement across variants of one engine is
+    still rewarded, because a reading that survives several augmentations
+    claims a larger share of that engine's single ballot.
+    """
+    per_engine = defaultdict(list)
+    for h in hyps:
+        per_engine[_engine(h.get("src", ""))].append(h)
+
+    scores = defaultdict(float)
+    for items in per_engine.values():
+        total = sum(h["weight"] for h in items) or 1.0
+        ballot = max(h["weight"] for h in items)
+        share = defaultdict(float)
+        for h in items:
+            share[_norm(h["text"])] += h["weight"]
+        for key, got in share.items():
+            if key:
+                scores[key] += ballot * (got / total)
+    return scores
+
+def _surface_pick(cands):
+    """Choose how the winning reading is spelled out.
+
+    Once the letters are settled, the remaining question is punctuation and
+    spacing. Weight sums answer it badly for the same reason as above, so the
+    exact spelling produced by the most distinct engines wins. The final
+    tie-break prefers the shorter string, because a stray trailing mark is a
+    far more common artifact than a genuinely omitted one.
+    """
+    groups = defaultdict(list)
+    for h in cands:
+        groups[h["text"]].append(h)
+
+    def rank(item):
+        text, items = item
+        engines = {_engine(h.get("src", "")) for h in items}
+        return (len(engines), sum(h["weight"] for h in items), -len(text))
+
+    return max(groups.items(), key=rank)[0]
+
+def _select(hyps, mode="auto"):
+    """Select a short reading by engine vote, then settle its surface form.
+
+    On document crops each engine's ballot is spread over the candidates in
+    proportion to character similarity. Document words fail through character
+    confusions, so several engines that nearly agree carry real evidence that
+    all-or-nothing voting throws away. Scene crops are short and decisive, and
+    partial credit only blurred them on the tuning split, so their votes stay
+    exact. The route comes from image statistics, not from which dataset a
+    crop belongs to.
+    """
+    scores = _engine_vote_scores(hyps)
+    if not scores:
+        return _mbr(hyps)
+
+    if mode == "document":
+        soft = defaultdict(float)
+        for cand in scores:
+            for other, weight in scores.items():
+                soft[cand] += weight * _sim(cand, other)
+        scores = soft
+
+    key = max(scores.items(), key=lambda kv: kv[1])[0]
+    cands = [h for h in hyps if _norm(h["text"]) == key]
+    text = _surface_pick(cands)
+    conf = min(0.99, max(h.get("conf", 0.9) for h in cands))
+    words = [(w, round(conf, 4)) for w in text.split()]
+    return {"text": text, "confidence": round(conf, 4), "words": words, "mode": "select"}
+
 def fuse(hyps, mode="auto"):
     """mode: auto|scene|document"""
     hyps = [h for h in hyps if h.get("text", "").strip()]
@@ -194,7 +279,7 @@ def fuse(hyps, mode="auto"):
     # Short readings are selected, never spliced. Measured on a tuning split
     # that is disjoint from every reported benchmark split.
     if max_tok <= SPLICE_MIN_TOKENS:
-        return _mbr(hyps)
+        return _mbr(hyps) if FUSION_LEGACY else _select(hyps, mode)
 
     if mode == "scene":
         return _pick_champion(hyps)
