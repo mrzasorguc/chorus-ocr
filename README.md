@@ -162,8 +162,12 @@ than any single engine available to that mode.
 
 | Dataset | Best single engine | Chorus Standard | Chorus Maximum | Chorus Max+Quality |
 | --- | ---: | ---: | ---: | ---: |
-| FUNSD | 0.71 (GOT-OCR) | 0.64 | 0.75 | **0.77** |
+| FUNSD | 0.71 (GOT-OCR) | 0.61 | 0.74 | **0.78** |
 | IIIT5K | 0.93 (GOT-OCR) | 0.92 | **0.98** | 0.96 |
+
+Character error rate is where fusion pulls furthest ahead. On FUNSD, Max+Quality
+sits at 0.0935 against 0.4459 for GOT-OCR alone, so even a reading that is not
+exactly right is usually close.
 
 ![Character error rate](docs/images/benchmark_cer.png)
 
@@ -177,7 +181,16 @@ above, so nothing here was optimized against its own benchmark. Fusion changes
 are only adopted when a paired bootstrap over that tuning split puts the whole
 95% interval on one side of zero; both selectors are judged on the exact same
 crops. An earlier three-point "gain" was discarded under this rule once the
-interval showed it was noise. Full method, per-engine tables, and the comparison
+interval showed it was noise.
+
+The current release fuses document readings character by character instead of
+picking one engine's whole answer, which is what cuts FUNSD character error
+from 0.3562 to 0.1777 in Maximum and from 0.1349 to 0.0935 in Max+Quality. That
+was the one change the bootstrap rule certified. The accuracy figures it did not
+certify moved both ways, and Standard Fusion lost three points on FUNSD, from
+0.64 to 0.61. That regression is reported rather than tuned away, and the
+reasoning behind refusing to patch it is in
+[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md). Full method, per-engine tables, and the comparison
 with published cloud and VLM results are in
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 

@@ -62,6 +62,50 @@ it raises accuracy -- it does not, at any resolution this evidence can support.
 A separately tempting variant that scored best on the small split was rejected
 by the same rule.
 
+## Fusing below the word: the character lattice
+
+Every selector described above has to return a reading that some engine already
+produced, so its accuracy is capped by the best hypothesis on the table. On the
+tuning split that cap was 0.6933 for the standard document profile. Aligning
+all hypotheses into columns and voting column by column removes the cap,
+because the result need not exist in any single hypothesis: one engine reads
+`Elcvcn`, another reads `Eleven =`, and the correct string is only reachable as
+a blend. Measured the same way, the reachable ceiling rises to 0.7767.
+
+Each engine casts one ballot per column, worth its heaviest weight and split
+across the options its own augmented variants produced, so an engine given many
+correlated variants cannot outvote three engines that agree. Votes are counted
+without case; the surface form that the heaviest evidence actually wrote is
+restored afterwards. There is no deletion-bias constant and no per-mode tuning:
+a sweep found different optima per mode, which is the signature of fitting
+noise, so the neutral setting was kept.
+
+The lattice runs on the document route only. Scene crops are single words
+photographed once, where picking the whole reading an engine saw beats
+assembling a new one, and the tuning split agreed.
+
+Before adoption the shipped code path -- not the prototype -- was replayed both
+ways over the same cached hypotheses. One comparison of twelve cleared the
+bootstrap rule: FUNSD Maximum CER, +0.0901 with an interval of
+[+0.0441, +0.1373]. The other eleven were indistinguishable and none lost.
+
+**What transferred, and what did not.** The established CER win transferred and
+then some: FUNSD Maximum fell from 0.3562 to 0.1777 on the test split, and
+Max+Quality from 0.1349 to 0.0935. The accuracy figures, none of which cleared
+the rule, did not transfer reliably -- Standard Fusion lost three points of
+FUNSD word accuracy, 0.64 to 0.61, after gaining a statistically meaningless
+1.7 points on the tuning split. That regression is left in the table rather
+than tuned away.
+
+It is also left unfixed on purpose. The obvious repair is a gate that runs the
+lattice only when the pivot hypothesis is strong, and `scripts/exp_gate.py`
+tests exactly that on the tuning split. The mechanical version of the
+hypothesis is simply false: gating on "the pivot came from GOT" scored *worse*
+than running the lattice everywhere. A similarity gate raised standard-profile
+accuracy while giving back most of the character-error win in the GOT modes,
+with a different optimal threshold per mode. Choosing among those after seeing
+test results is how benchmark numbers get manufactured, so no gate was added.
+
 ## Charts
 
 Generated from the JSON results with `python scripts/make_charts.py`.
@@ -79,31 +123,34 @@ Generated from the JSON results with `python scripts/make_charts.py`.
 | System | Word acc | CER | Sec |
 | --- | --- | --- | --- |
 | EasyOCR alone | 0.33 | 0.4666 | 0.03 |
-| PaddleOCR alone | 0.41 | 0.4398 | 0.24 |
-| Tesseract alone | 0.56 | 0.2282 | 0.34 |
-| GOT-OCR 2.0 alone | 0.71 | 0.4459 | 2.63 |
-| **Chorus — Standard Fusion** | **0.64** | 0.1937 | 0.50 |
-| **Chorus — Maximum Performance** | **0.75** | 0.3562 | 3.14 |
-| **Chorus — Maximum + Quality** | **0.77** | **0.1349** | 7.38 |
+| PaddleOCR alone | 0.41 | 0.4398 | 0.31 |
+| Tesseract alone | 0.56 | 0.2282 | 0.50 |
+| GOT-OCR 2.0 alone | 0.71 | 0.4459 | 2.91 |
+| **Chorus — Standard Fusion** | **0.61** | 0.2125 | 0.46 |
+| **Chorus — Maximum Performance** | **0.74** | 0.1777 | 3.36 |
+| **Chorus — Maximum + Quality** | **0.78** | **0.0935** | 7.94 |
 
 ## Results — IIIT5K (scene text, 100 word crops)
 
 | System | Word acc | CER | Sec |
 | --- | --- | --- | --- |
-| EasyOCR alone | 0.72 | 0.2082 | 0.03 |
-| PaddleOCR alone | 0.73 | 0.2477 | 0.21 |
-| Tesseract alone | 0.66 | 0.2505 | 0.32 |
-| GOT-OCR 2.0 alone | 0.93 | 0.0427 | 1.92 |
-| **Chorus — Standard Fusion** | **0.92** | 0.0759 | 0.49 |
-| **Chorus — Maximum Performance** | **0.98** | **0.0200** | 2.11 |
-| **Chorus — Maximum + Quality** | 0.96 | 0.0283 | 4.94 |
+| EasyOCR alone | 0.72 | 0.2082 | 0.05 |
+| PaddleOCR alone | 0.73 | 0.2477 | 0.28 |
+| Tesseract alone | 0.66 | 0.2505 | 0.40 |
+| GOT-OCR 2.0 alone | 0.93 | 0.0427 | 2.60 |
+| **Chorus — Standard Fusion** | **0.92** | 0.0759 | 0.63 |
+| **Chorus — Maximum Performance** | **0.98** | **0.0200** | 2.94 |
+| **Chorus — Maximum + Quality** | 0.96 | 0.0283 | 5.42 |
 
 ## What these numbers do and do not show
 
 **They show** that fusion beats every engine it is built from. In each mode,
 Chorus scores higher than any single engine available to that mode: Standard
-reaches 0.64 and 0.92 where its best member reaches 0.56 and 0.73, and the
-GOT-enabled modes reach 0.77 and 0.98 where GOT alone reaches 0.71 and 0.93.
+reaches 0.61 and 0.92 where its best member reaches 0.56 and 0.73, and the
+GOT-enabled modes reach 0.78 and 0.98 where GOT alone reaches 0.71 and 0.93.
+Character error rate separates them further: on FUNSD, Max+Quality sits at
+0.0935 against 0.4459 for GOT alone, so even where the fused reading is not
+exactly right it is usually close.
 
 **They do not show** that Chorus is the strongest OCR system in existence.
 Chorus is a fusion layer, so it cannot read anything its member engines all

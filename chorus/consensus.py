@@ -269,11 +269,111 @@ def _select(hyps, mode="auto"):
     words = [(w, round(conf, 4)) for w in text.split()]
     return {"text": text, "confidence": round(conf, 4), "words": words, "mode": "select"}
 
+# Character-lattice fusion. Every selector before this one had to return a
+# reading some engine had already produced, so its accuracy was capped by the
+# best available hypothesis. On the tuning split that cap sat at 0.69 for the
+# standard document profile while the truth was reachable 0.78 of the time by
+# mixing engines character by character: one engine reads "Elcvcn", another
+# reads "Eleven =", and the correct string exists only as a blend of the two.
+# Aligning the hypotheses into columns and voting per column lifts that cap,
+# because the result need not exist in any single hypothesis.
+LATTICE_ENABLED = os.environ.get("CHORUS_LATTICE", "1") != "0"
+
+def _align_columns(pivot, texts):
+    """Align every text to the pivot and return one option per text per column.
+
+    Columns interleave as ins[0], piv[0], ins[1], piv[1], ... ins[L]. The 'piv'
+    columns hold whatever each text aligns to that pivot character, and the
+    'ins' columns absorb characters a text has where the pivot has none. Every
+    text contributes exactly one option to every column, which is what makes a
+    per-column vote well defined.
+    """
+    span_len = len(pivot)
+    per_text = []
+    for text in texts:
+        ins = [""] * (span_len + 1)
+        piv = [""] * span_len
+        for tag, i1, i2, j1, j2 in SequenceMatcher(None, pivot, text).get_opcodes():
+            if tag == "equal":
+                for k in range(i1, i2):
+                    piv[k] = text[j1 + (k - i1)]
+            elif tag == "replace":
+                span = j2 - j1
+                for k in range(i1, i2):
+                    off = k - i1
+                    piv[k] = text[j1 + off] if off < span else ""
+                if span > (i2 - i1):
+                    ins[i2] += text[j1 + (i2 - i1):j2]
+            elif tag == "delete":
+                for k in range(i1, i2):
+                    piv[k] = ""
+            elif tag == "insert":
+                ins[i1] += text[j1:j2]
+        per_text.append((ins, piv))
+
+    cols = []
+    for i in range(span_len + 1):
+        cols.append([item[0][i] for item in per_text])
+        if i < span_len:
+            cols.append([item[1][i] for item in per_text])
+    return cols
+
+def _column_pick(col, hyps):
+    """Decide one column: one ballot per engine, then restore the surface form.
+
+    Test-time augmentation hands a single engine many correlated variants, so
+    weighing each variant separately lets one engine outvote three that agree.
+    Each engine therefore casts a single ballot worth its heaviest weight,
+    split across the options its own variants produced. Votes are counted
+    without case so that 'B' and 'b' are not treated as rival readings, and
+    the winning surface form is the one the heaviest evidence actually wrote.
+    """
+    by_engine = {}
+    surfaces = defaultdict(lambda: defaultdict(float))
+    for opt, h in zip(col, hyps):
+        eng = _engine(h.get("src", ""))
+        key = opt.lower()
+        slot = by_engine.setdefault(eng, {"opts": defaultdict(float), "ballot": 0.0})
+        slot["opts"][key] += h["weight"]
+        if h["weight"] > slot["ballot"]:
+            slot["ballot"] = h["weight"]
+        surfaces[key][opt] += h["weight"]
+
+    tally = defaultdict(float)
+    for slot in by_engine.values():
+        total = sum(slot["opts"].values()) or 1.0
+        for key, weight in slot["opts"].items():
+            tally[key] += slot["ballot"] * (weight / total)
+
+    key = max(tally.items(), key=lambda kv: (kv[1], len(kv[0]), kv[0]))[0]
+    forms = surfaces[key]
+    return max(forms.items(), key=lambda kv: (kv[1], kv[0]))[0]
+
+def _lattice(hyps):
+    """Fuse document readings character by character through a column lattice."""
+    pivot = max(hyps, key=lambda h: h["weight"])["text"]
+    cols = _align_columns(pivot, [h["text"] for h in hyps])
+    text = " ".join("".join(_column_pick(col, hyps) for col in cols).split())
+    if not text:
+        return _rover(hyps)
+    conf = min(0.99, max(h.get("conf", 0.9) for h in hyps))
+    words = [(w, round(conf, 4)) for w in text.split()]
+    return {"text": text, "confidence": round(conf, 4), "words": words, "mode": "lattice"}
+
 def fuse(hyps, mode="auto"):
     """mode: auto|scene|document"""
     hyps = [h for h in hyps if h.get("text", "").strip()]
     if not hyps:
         return {"text": "", "confidence": 0.0, "words": []}
+
+    # Document crops are fused character by character. Scene crops are not: a
+    # scene crop is a single word photographed once, where picking the whole
+    # reading an engine actually saw beats assembling a new one. Mixing hurt
+    # scene text on the tuning split and helped document text there, so the
+    # split follows the route, which comes from image statistics rather than
+    # from which dataset a crop belongs to.
+    if mode == "document" and LATTICE_ENABLED:
+        return _lattice(hyps)
 
     max_tok = max(len(h["text"].split()) for h in hyps)
     # Short readings are selected, never spliced. Measured on a tuning split
