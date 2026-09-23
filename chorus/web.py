@@ -59,6 +59,13 @@ def recognize(image: Any, mode: str):
             "kurun. Maksimum Performans modu için gereklidir."
         )
 
+    if not result.get("text", "").strip():
+        raise gr.Error(
+            "No text was recognized. Check that the OCR engines are installed and "
+            "try a clearer image. / Metin okunamadı. OCR motorlarının kurulu "
+            "olduğunu kontrol edin ve daha net bir görselle tekrar deneyin."
+        )
+
     confidence = f"{result['confidence'] * 100:.1f}%"
     route = (
         "Scene text / Sahne yazısı"
@@ -161,6 +168,12 @@ def create_demo() -> gr.Blocks:
             inputs=[image, mode],
             outputs=[text, confidence, route, elapsed, details],
         )
+        for input_component in (image, mode):
+            input_component.change(
+                fn=lambda: ("", "", "", "", ""),
+                outputs=[text, confidence, route, elapsed, details],
+                queue=False,
+            )
     return demo
 
 
